@@ -36,7 +36,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
         import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
 
-        // A configuração do Firebase continua aqui.
+        // A sua configuração do Firebase.
         const firebaseConfig = {
           apiKey: "AIzaSyDbnPDgRBVdhhM_DXlHHyuJ_fq6As2rECU",
           authDomain: "assistente-automotivo.firebaseapp.com",
@@ -51,14 +51,10 @@
         const auth = getAuth(app);
         const provider = new GoogleAuthProvider();
 
-        let currentCarsData = [];
-
         const userAuthArea = document.getElementById('user-auth-area');
         const appContent = document.getElementById('app-content');
         const loginPrompt = document.getElementById('login-prompt');
         const googleLoginBtn = document.getElementById('google-login-btn');
-
-        // --- LÓGICA DE AUTENTICAÇÃO E RENDERIZAÇÃO ---
         
         onAuthStateChanged(auth, user => {
             if (user) {
@@ -76,9 +72,6 @@
         googleLoginBtn.addEventListener('click', () => {
             signInWithPopup(auth, provider).catch(error => {
                 console.error("Erro no login:", error);
-                if (error.code === 'auth/unauthorized-domain') {
-                    alert("ERRO DE CONFIGURAÇÃO DO FIREBASE:\n\nO domínio que está a usar para testar não está autorizado.\n\nPARA CORRIGIR:\n1. Vá ao seu projeto no Firebase.\n2. Vá a 'Authentication' -> separador 'Settings'.\n3. Em 'Authorized domains', clique em 'Add domain'.\n4. Adicione 'localhost' e o domínio onde hospeda o site.\n\nDepois disto, atualize a página e tente novamente.");
-                }
             });
         });
 
@@ -111,6 +104,7 @@
                 <div id="results-section" class="mt-8">
                     <div id="loader" class="hidden mx-auto loader ease-linear rounded-full border-8 border-t-8 border-gray-200 h-24 w-24"></div>
                     <div id="results-container" class="grid grid-cols-1 gap-6"></div>
+                    <p id="error-message" class="hidden text-center text-red-600 mt-4"></p>
                 </div>`;
             
             addAppEventListeners();
@@ -118,28 +112,61 @@
 
         function addAppEventListeners() {
             const form = document.getElementById('scrape-form');
-            const resultsContainer = document.getElementById('results-container');
-            
-            form.addEventListener('submit', (e) => {
+            form.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                const searchData = { brand: document.getElementById('brand-input').value, model: document.getElementById('model-input').value, year: document.getElementById('year-input').value, location: document.getElementById('location-input').value };
+                const searchData = { 
+                    brand: document.getElementById('brand-input').value, 
+                    model: document.getElementById('model-input').value, 
+                    year: document.getElementById('year-input').value, 
+                    location: document.getElementById('location-input').value 
+                };
+
                 const loader = document.getElementById('loader');
                 const submitButton = document.getElementById('submit-button');
+                const resultsContainer = document.getElementById('results-container');
+                const errorMessage = document.getElementById('error-message');
+
                 loader.classList.remove('hidden');
                 resultsContainer.innerHTML = '';
+                errorMessage.classList.add('hidden');
                 submitButton.disabled = true;
-                setTimeout(() => {
-                    currentCarsData = generateMockData(searchData);
-                    displayResults(currentCarsData);
+
+                try {
+                    // --- PASSO CRÍTICO ---
+                    // O URL foi atualizado com o endereço do seu serviço no Render.
+                    const apiUrl = 'https://assistcar.onrender.com/api/scrape'; 
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(searchData),
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Falha na comunicação com o servidor. Verifique se o servidor está ativo no Render.');
+                    }
+
+                    const cars = await response.json();
+                    displayResults(cars);
+
+                } catch (error) {
+                    console.error("Erro ao buscar dados:", error);
+                    errorMessage.textContent = error.message;
+                    errorMessage.classList.remove('hidden');
+                } finally {
                     loader.classList.add('hidden');
                     submitButton.disabled = false;
-                }, 1500);
+                }
             });
         }
 
         function displayResults(cars) {
             const resultsContainer = document.getElementById('results-container');
             resultsContainer.innerHTML = '';
+            if (cars.length === 0) {
+                resultsContainer.innerHTML = '<p class="text-center text-gray-600">Nenhum resultado encontrado para a sua pesquisa.</p>';
+                return;
+            }
             cars.forEach(car => {
                 const youtubeUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(car.youtubeSearchTerm)}`;
                 const carCard = `
@@ -168,27 +195,6 @@
                 resultsContainer.innerHTML += carCard;
             });
         }
-
-        function generateMockData(searchData) {
-            const mockCars = [];
-            const nomes = ["Carlos Silva", "Mariana Costa", "Roberto Almeida", "Fernanda Lima", "Jorge Santos"];
-            for (let i = 1; i <= 5; i++) {
-                mockCars.push({
-                    id: `mock-${i}`,
-                    titulo: `${searchData.brand || 'Marca'} ${searchData.model || 'Modelo'} Sport`,
-                    preco: `R$ ${(Math.random() * (90 - 45) + 45).toFixed(3)}`,
-                    ano_km: `${searchData.year || 2020} | ${(Math.random() * 80000 + 15000).toFixed(0)} Km`,
-                    localizacao: searchData.location || "Qualquer Lugar",
-                    vendedor: nomes[i-1],
-                    telefone: `(71) 9${Math.floor(Math.random() * 9000 + 1000)}-${Math.floor(Math.random() * 9000 + 1000)}`,
-                    email: `${nomes[i-1].split(' ')[0].toLowerCase()}@emailficticio.com`,
-                    imageUrl: `https://placehold.co/600x400/5e60e0/ffffff?text=${searchData.brand}+${i}`,
-                    youtubeSearchTerm: `review ${searchData.brand} ${searchData.model}`
-                });
-            }
-            return mockCars;
-        }
-
     </script>
 </body>
 </html>
