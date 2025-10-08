@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assistente de Compra de Seminovos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
+    <style>
+        .loader { border-top-color: #3498db; animation: spinner 1.5s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+
+    <header class="bg-white shadow-md sticky top-0 z-10">
+        <nav class="container mx-auto px-6 py-3 flex justify-between items-center">
+            <h1 class="text-xl font-bold text-gray-800">Seu Assistente Automotivo</h1>
+            <div id="user-auth-area" class="flex items-center"></div>
+        </nav>
+    </header>
+
+    <div class="container mx-auto p-4 md:p-8 max-w-2xl">
+        <main id="app-content" class="hidden"></main>
+
+        <div id="login-prompt" class="text-center mt-16 bg-white p-8 rounded-lg shadow-md">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Bem-vindo!</h2>
+            <p class="text-gray-600 mb-6">Faça login com sua conta Google para começar a pesquisar.</p>
+            <button id="google-login-btn" class="bg-blue-600 text-white font-bold py-3 px-6 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition">
+                <i class="fab fa-google mr-2"></i> Entrar com Google
+            </button>
+        </div>
+    </div>
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
+        import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
+
+        // A configuração do Firebase continua aqui.
+        const firebaseConfig = {
+          apiKey: "AIzaSyDbnPDgRBVdhhM_DXlHHyuJ_fq6As2rECU",
+          authDomain: "assistente-automotivo.firebaseapp.com",
+          projectId: "assistente-automotivo",
+          storageBucket: "assistente-automotivo.firebasestorage.app",
+          messagingSenderId: "107627195423",
+          appId: "1:107627195423:web:a46586e36431879f3db92a",
+          measurementId: "G-G6WVYZNRCJ"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
+
+        let currentCarsData = [];
+
+        const userAuthArea = document.getElementById('user-auth-area');
+        const appContent = document.getElementById('app-content');
+        const loginPrompt = document.getElementById('login-prompt');
+        const googleLoginBtn = document.getElementById('google-login-btn');
+
+        // --- LÓGICA DE AUTENTICAÇÃO E RENDERIZAÇÃO ---
+        
+        onAuthStateChanged(auth, user => {
+            if (user) {
+                loginPrompt.classList.add('hidden');
+                appContent.classList.remove('hidden');
+                renderAppContent(user);
+            } else {
+                loginPrompt.classList.remove('hidden');
+                appContent.classList.add('hidden');
+                appContent.innerHTML = '';
+                userAuthArea.innerHTML = '';
+            }
+        });
+        
+        googleLoginBtn.addEventListener('click', () => {
+            signInWithPopup(auth, provider).catch(error => {
+                console.error("Erro no login:", error);
+                if (error.code === 'auth/unauthorized-domain') {
+                    alert("ERRO DE CONFIGURAÇÃO DO FIREBASE:\n\nO domínio que está a usar para testar não está autorizado.\n\nPARA CORRIGIR:\n1. Vá ao seu projeto no Firebase.\n2. Vá a 'Authentication' -> separador 'Settings'.\n3. Em 'Authorized domains', clique em 'Add domain'.\n4. Adicione 'localhost' e o domínio onde hospeda o site.\n\nDepois disto, atualize a página e tente novamente.");
+                }
+            });
+        });
+
+        function renderAppContent(user) {
+            userAuthArea.innerHTML = `
+                <div class="flex items-center">
+                    <img src="${user.photoURL}" alt="${user.displayName}" class="w-8 h-8 rounded-full mr-2">
+                    <span class="text-sm font-medium text-gray-700 hidden sm:block">${user.displayName}</span>
+                    <button id="logout-btn" class="ml-4 text-sm text-gray-500 hover:text-gray-800">Sair</button>
+                </div>`;
+            document.getElementById('logout-btn').addEventListener('click', () => signOut(auth));
+
+            appContent.innerHTML = `
+                <div id="search-area">
+                     <div class="bg-white p-6 rounded-lg shadow-md">
+                        <h2 class="text-2xl font-bold text-gray-800 text-center mb-4">Encontre o carro dos seus sonhos</h2>
+                        <form id="scrape-form">
+                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <input type="text" id="brand-input" placeholder="Marca (ex: Fiat)" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <input type="text" id="model-input" placeholder="Modelo (ex: Uno)" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <input type="number" id="year-input" placeholder="Ano a partir de" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <input type="text" id="location-input" placeholder="Localidade (ex: Salvador, BA)" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <button type="submit" id="submit-button" class="mt-6 w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition">
+                                <i class="fas fa-search mr-2"></i> Pesquisar Ofertas
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                <div id="results-section" class="mt-8">
+                    <div id="loader" class="hidden mx-auto loader ease-linear rounded-full border-8 border-t-8 border-gray-200 h-24 w-24"></div>
+                    <div id="results-container" class="grid grid-cols-1 gap-6"></div>
+                </div>`;
+            
+            addAppEventListeners();
+        }
+
+        function addAppEventListeners() {
+            const form = document.getElementById('scrape-form');
+            const resultsContainer = document.getElementById('results-container');
+            
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const searchData = { brand: document.getElementById('brand-input').value, model: document.getElementById('model-input').value, year: document.getElementById('year-input').value, location: document.getElementById('location-input').value };
+                const loader = document.getElementById('loader');
+                const submitButton = document.getElementById('submit-button');
+                loader.classList.remove('hidden');
+                resultsContainer.innerHTML = '';
+                submitButton.disabled = true;
+                setTimeout(() => {
+                    currentCarsData = generateMockData(searchData);
+                    displayResults(currentCarsData);
+                    loader.classList.add('hidden');
+                    submitButton.disabled = false;
+                }, 1500);
+            });
+        }
+
+        function displayResults(cars) {
+            const resultsContainer = document.getElementById('results-container');
+            resultsContainer.innerHTML = '';
+            cars.forEach(car => {
+                const youtubeUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(car.youtubeSearchTerm)}`;
+                const carCard = `
+                    <div class="bg-white rounded-lg shadow-md overflow-hidden">
+                        <img src="${car.imageUrl}" alt="Imagem de ${car.titulo}" class="w-full h-56 object-cover" onerror="this.onerror=null;this.src='https://placehold.co/600x400/cccccc/ffffff?text=Imagem+N/D';">
+                        <div class="p-5">
+                            <h3 class="text-xl font-bold text-gray-800">${car.titulo}</h3>
+                            <p class="text-2xl font-light text-green-600 mt-2">${car.preco}</p>
+                            <p class="text-gray-600 mt-1">${car.ano_km}</p>
+                            <p class="text-gray-500 text-sm mt-1"><i class="fas fa-map-marker-alt mr-1"></i>${car.localizacao}</p>
+                            
+                            <div class="mt-4 pt-4 border-t border-gray-200">
+                                <h4 class="text-sm font-semibold text-gray-700 mb-2">Informações do Vendedor</h4>
+                                <p class="text-gray-500 text-sm mt-1"><i class="fas fa-user fa-fw mr-2"></i>${car.vendedor}</p>
+                                <p class="text-gray-500 text-sm mt-1"><i class="fas fa-phone fa-fw mr-2"></i>${car.telefone}</p>
+                                <p class="text-gray-500 text-sm mt-1"><i class="fas fa-envelope fa-fw mr-2"></i>${car.email}</p>
+                            </div>
+
+                            <div class="mt-4">
+                                <a href="${youtubeUrl}" target="_blank" rel="noopener noreferrer" class="inline-block bg-red-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-red-700 transition">
+                                    <i class="fab fa-youtube mr-2"></i> Ver Vídeos
+                                </a>
+                            </div>
+                        </div>
+                    </div>`;
+                resultsContainer.innerHTML += carCard;
+            });
+        }
+
+        function generateMockData(searchData) {
+            const mockCars = [];
+            const nomes = ["Carlos Silva", "Mariana Costa", "Roberto Almeida", "Fernanda Lima", "Jorge Santos"];
+            for (let i = 1; i <= 5; i++) {
+                mockCars.push({
+                    id: `mock-${i}`,
+                    titulo: `${searchData.brand || 'Marca'} ${searchData.model || 'Modelo'} Sport`,
+                    preco: `R$ ${(Math.random() * (90 - 45) + 45).toFixed(3)}`,
+                    ano_km: `${searchData.year || 2020} | ${(Math.random() * 80000 + 15000).toFixed(0)} Km`,
+                    localizacao: searchData.location || "Qualquer Lugar",
+                    vendedor: nomes[i-1],
+                    telefone: `(71) 9${Math.floor(Math.random() * 9000 + 1000)}-${Math.floor(Math.random() * 9000 + 1000)}`,
+                    email: `${nomes[i-1].split(' ')[0].toLowerCase()}@emailficticio.com`,
+                    imageUrl: `https://placehold.co/600x400/5e60e0/ffffff?text=${searchData.brand}+${i}`,
+                    youtubeSearchTerm: `review ${searchData.brand} ${searchData.model}`
+                });
+            }
+            return mockCars;
+        }
+
+    </script>
+</body>
+</html>
+
