@@ -1,9 +1,15 @@
 import flask
 from flask import request, jsonify
 from flask_cors import CORS
-import requests
 from bs4 import BeautifulSoup
 import random
+import time
+
+# Importa as ferramentas do Selenium
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
 
 app = flask.Flask(__name__)
 CORS(app)
@@ -14,60 +20,60 @@ def scrape():
     search_data = request.json
     print(f"Recebido pedido de pesquisa para: {search_data}")
 
+    # --- Configuração do Selenium (O "Pesquisador Paciente") ---
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")  # Executa o Chrome sem abrir uma janela visual
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+    
+    # Instala e gere o driver do Chrome automaticamente
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+    
     try:
-        # --- PASSO 1: CONSTRUIR A URL DE PESQUISA ---
-        # A URL base do Webmotors para carros usados em Salvador, BA.
-        # Você pode adaptar esta URL para outras cidades ou estados.
-        # Os parâmetros `marca` e `modelo` são adicionados dinamicamente.
         base_url = "https://www.webmotors.com.br/carros/usados/bahia/salvador"
         marca = search_data.get('brand', '').lower()
         modelo = search_data.get('model', '').lower()
         url_pesquisa = f"{base_url}/{marca}/{modelo}"
         
-        print(f"A aceder à URL: {url_pesquisa}")
+        print(f"A aceder à URL com o Selenium: {url_pesquisa}")
 
-        response = requests.get(url_pesquisa, headers={'User-Agent': 'Mozilla/5.0'})
-        response.raise_for_status()
+        # O Selenium abre o navegador e vai para a página
+        driver.get(url_pesquisa)
+        
+        # Espera pacientemente 5 segundos para que o JavaScript carregue os anúncios
+        time.sleep(5) 
+        
+        # Agora que tudo carregou, pegamos o HTML completo
+        page_source = driver.page_source
+        soup = BeautifulSoup(page_source, 'html.parser')
 
-        soup = BeautifulSoup(response.content, 'html.parser')
-
-        # --- PASSO 2: ENCONTRAR OS ANÚNCIOS ---
-        # Com base na sua investigação, cada anúncio está dentro de uma tag <a>
-        # com a classe "vehicle-card-oem-desktop_Link__q4YEd".
+        # O resto do código é o mesmo, pois agora ele tem o HTML completo para analisar
         anuncios = soup.find_all('a', class_='vehicle-card-oem-desktop_Link__q4YEd')
         
         if not anuncios:
-            print("Nenhum anúncio encontrado com os seletores fornecidos.")
+            print("Nenhum anúncio encontrado. O site pode ter alterado a sua estrutura ou bloqueado o acesso.")
 
         carros_encontrados = []
-        
         for anuncio in anuncios:
-            # --- PASSO 3: EXTRAIR OS DADOS DE CADA ANÚNCIO ---
-            
-            # TÍTULO (Confirmado pela sua investigação)
             titulo_tag = anuncio.find('p', class_='_web-title-medium_qtpsh__51')
             titulo = titulo_tag.text.strip() if titulo_tag else "Título não encontrado"
 
-            # PREÇO (Precisa de ser investigado)
-            # Use o "Inspecionar" para encontrar a tag e a classe do preço
             preco_tag = anuncio.find('strong', attrs={'data-testid': 'price-value'})
             preco = preco_tag.text.strip() if preco_tag else "Preço a consultar"
 
-            # ANO/KM (Precisa de ser investigado)
-            ano_km_tag = anuncio.find('div', class_='sc-f206734a-1') # Exemplo, a classe real pode ser outra
-            ano_km = ano_km_tag.text.strip() if ano_km_tag else "Não informado"
+            # A estrutura do Webmotors agrupa ano e km num único elemento
+            info_tags = anuncio.find_all('span', class_='sc-f206734a-2')
+            ano_km = "Não informado"
+            if len(info_tags) > 0:
+                ano_km = ' | '.join(tag.text.strip() for tag in info_tags)
             
-            # LOCALIZAÇÃO (Precisa de ser investigado)
-            local_tag = anuncio.find('span', class_='sc-f206734a-2') # Exemplo, a classe real pode ser outra
-            localizacao = local_tag.text.strip() if local_tag else "Não informada"
+            localizacao = "Salvador, BA" # A localização está na URL, podemos assumi-la
 
-            # IMAGEM (Precisa de ser investigado)
-            # A imagem principal está geralmente numa tag <img>
             imagem_tag = anuncio.find('img')
-            imageUrl = imagem_tag['src'] if imagem_tag and imagem_tag.has_attr('src') else "https://placehold.co/600x400/cccccc/ffffff?text=Imagem+N/D"
+            imageUrl = imagem_tag['src'] if imagem_tag and 'src' in imagem_tag.attrs else "https://placehold.co/600x400/cccccc/ffffff?text=Imagem+N/D"
 
-            # Vendedor (Estes dados geralmente estão na página de detalhe do anúncio,
-            # o que exigiria um segundo passo de raspagem. Por agora, simulamos.)
             nomes = ["Carlos Silva", "Mariana Costa", "Roberto Almeida"]
             vendedor_info = random.choice(nomes)
 
@@ -87,12 +93,12 @@ def scrape():
 
         return jsonify(carros_encontrados)
 
-    except requests.exceptions.RequestException as e:
-        print(f"Erro de rede ao aceder ao site: {e}")
-        return jsonify({"error": "Não foi possível aceder ao site de classificados."}), 500
     except Exception as e:
         print(f"Ocorreu um erro inesperado durante a raspagem: {e}")
         return jsonify({"error": f"Ocorreu um erro ao processar os dados: {e}"}), 500
+    finally:
+        # Garante que o navegador é fechado no final, mesmo que ocorra um erro
+        driver.quit()
 
 if __name__ == '__main__':
     app.run(debug=True)
