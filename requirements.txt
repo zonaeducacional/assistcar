@@ -1,12 +1,5 @@
-Flaskflask-corsrequestsbeautifulsoup4gunicorn
-  @media print {
-    .ms-editor-squiggler {
-        display:none !important;
-    }
-  }
-  .ms-editor-squiggler {
-    all: initial;
-    display: block !important;
-    height: 0px !important;
-    width: 0px !important;
-  }
+Flask
+flask-cors
+requests
+beautifulsoup4
+gunicorn
